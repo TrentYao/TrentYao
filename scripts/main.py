@@ -2,10 +2,11 @@ from pathlib import Path
 
 import numpy as np
 import pygame as pg
+from PIL import Image
 
 
 # --------------------------------------------------
-# Settings
+# Window and animation settings
 # --------------------------------------------------
 
 FPS = 60
@@ -19,7 +20,11 @@ Y_GAP = 12
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 
-# Animation timing, measured in seconds.
+
+# --------------------------------------------------
+# Animation timing, in seconds
+# --------------------------------------------------
+
 PRINT_LINE_TIME = 0.07
 PRINT_HOLD_TIME = 0.5
 
@@ -30,40 +35,76 @@ BLANK_HOLD_TIME = 0.4
 
 
 # --------------------------------------------------
-# File path
+# GIF settings
 # --------------------------------------------------
 
-# main.py is assumed to be inside:
-# TrentYao/scripts/main.py
+# The Pygame window runs at 60 FPS, but the GIF is
+# recorded at 20 FPS to keep the file size reasonable.
+GIF_FPS = 20
+
+# Size of the saved GIF.
+GIF_SIZE = (525, 600)
+
+# Capture one frame every three Pygame frames:
+# 60 FPS / 20 GIF FPS = 3
+CAPTURE_EVERY = max(1, round(FPS / GIF_FPS))
+
+
+# --------------------------------------------------
+# Project paths
+# --------------------------------------------------
+
+# Expected project structure:
 #
-# The ASCII file is assumed to be inside:
-# TrentYao/asciiArt/secondCard.txt
+# TrentYao/
+# ├── asciiArt/
+# │   └── secondCard.txt
+# ├── assets/
+# │   └── card-animation.gif
+# └── scripts/
+#     └── main.py
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-TXT_PATH = PROJECT_ROOT / "asciiArt" / "secondCard.txt"
+
+TXT_PATH = (
+    PROJECT_ROOT
+    / "asciiArt"
+    / "secondCard.txt"
+)
+
+GIF_PATH = (
+    PROJECT_ROOT
+    / "assets"
+    / "card-animation.gif"
+)
 
 
 # --------------------------------------------------
-# Load ASCII card
+# Load the ASCII-art file
 # --------------------------------------------------
 
 def load_ascii_file(path):
     if not path.exists():
         raise FileNotFoundError(
-            f"Could not find the ASCII card file:\n{path}"
+            "Could not find the ASCII card file:\n"
+            f"{path}"
         )
 
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = path.read_text(
+        encoding="utf-8"
+    ).splitlines()
 
     if not lines:
         raise ValueError(
-            f"The ASCII card file is empty:\n{path}"
+            "The ASCII card file is empty:\n"
+            f"{path}"
         )
 
     map_width = max(len(line) for line in lines)
     map_height = len(lines)
 
-    # Make every line the same width.
+    # Add spaces to shorter lines so every line
+    # has the same width.
     padded_lines = [
         line.ljust(map_width)
         for line in lines
@@ -75,13 +116,20 @@ def load_ascii_file(path):
 
 
 # --------------------------------------------------
-# Card object
+# Card coordinate object
 # --------------------------------------------------
 
 class CardObject:
     def __init__(self):
-        self.nodes = np.zeros((0, 4), dtype=float)
-        self.original_nodes = np.zeros((0, 4), dtype=float)
+        self.nodes = np.zeros(
+            (0, 4),
+            dtype=float,
+        )
+
+        self.original_nodes = np.zeros(
+            (0, 4),
+            dtype=float,
+        )
 
     def add_nodes(self, node_array):
         ones_column = np.ones(
@@ -98,8 +146,9 @@ class CardObject:
 
     def set_rotation(self, matrix):
         """
-        Rotate from the original coordinates rather than repeatedly
-        rotating already-rotated coordinates.
+        Calculate every rotation from the original card
+        coordinates. This prevents rotation errors from
+        accumulating over time.
         """
 
         center = self.original_nodes.mean(
@@ -141,18 +190,22 @@ class Projection:
             (width, height)
         )
 
-        pg.display.set_caption("ASCII 3D CARD")
+        pg.display.set_caption(
+            "ASCII 3D CARD"
+        )
 
         self.background = BLACK
         self.surfaces = {}
 
-        # A monospaced font keeps ASCII artwork aligned.
+        # Consolas is monospaced, which helps keep the
+        # ASCII-art characters correctly aligned.
         self.font = pg.font.SysFont(
             "consolas",
             10,
         )
 
-        # Render each unique character only once.
+        # Render each unique character once instead of
+        # rendering it again during every frame.
         self.character_surfaces = {
             character: self.font.render(
                 character,
@@ -176,27 +229,35 @@ class Projection:
         if last_visible_row is None:
             last_visible_row = self.map_height
 
-        card_pixel_width = self.map_width * X_GAP
-        card_pixel_height = self.map_height * Y_GAP
+        card_pixel_width = (
+            max(0, self.map_width - 1)
+            * X_GAP
+        )
+
+        card_pixel_height = (
+            max(0, self.map_height - 1)
+            * Y_GAP
+        )
 
         start_x = (
-            self.width / 2
-            - card_pixel_width / 2
-        )
+            self.width - card_pixel_width
+        ) / 2
 
         start_y = (
-            self.height / 2
-            - card_pixel_height / 2
-        )
+            self.height - card_pixel_height
+        ) / 2
 
         for surface in self.surfaces.values():
-            for index, node in enumerate(surface.nodes):
+            for index, node in enumerate(
+                surface.nodes
+            ):
                 if index >= len(self.characters):
                     break
 
                 row = index // self.map_width
 
-                # Only display rows belonging to the current phase.
+                # Hide rows that are outside the currently
+                # visible section of the card.
                 if not (
                     first_visible_row
                     <= row
@@ -206,6 +267,7 @@ class Projection:
 
                 character = self.characters[index]
 
+                # Spaces do not need to be drawn.
                 if character == " ":
                     continue
 
@@ -264,7 +326,9 @@ class Projection:
         )
 
         for surface in self.surfaces.values():
-            surface.set_rotation(combined_matrix)
+            surface.set_rotation(
+                combined_matrix
+            )
 
     def reset(self):
         for surface in self.surfaces.values():
@@ -272,10 +336,13 @@ class Projection:
 
 
 # --------------------------------------------------
-# Create card coordinates
+# Generate one coordinate for each ASCII character
 # --------------------------------------------------
 
-def create_card_nodes(map_width, map_height):
+def create_card_nodes(
+    map_width,
+    map_height,
+):
     nodes = []
 
     for row in range(map_height):
@@ -287,7 +354,70 @@ def create_card_nodes(map_width, map_height):
 
             nodes.append((x, y, z))
 
-    return np.array(nodes, dtype=float)
+    return np.array(
+        nodes,
+        dtype=float,
+    )
+
+
+# --------------------------------------------------
+# Capture one Pygame frame as a Pillow image
+# --------------------------------------------------
+
+def capture_gif_frame(screen):
+    resized_surface = pg.transform.smoothscale(
+        screen,
+        GIF_SIZE,
+    )
+
+    image_bytes = pg.image.tobytes(
+        resized_surface,
+        "RGB",
+    )
+
+    return Image.frombytes(
+        "RGB",
+        resized_surface.get_size(),
+        image_bytes,
+    )
+
+
+# --------------------------------------------------
+# Save all recorded frames as a GIF
+# --------------------------------------------------
+
+def save_animation(
+    frames,
+    output_path,
+    fps,
+):
+    if not frames:
+        print("No GIF frames were recorded.")
+        return
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    print(
+        f"Saving {len(frames)} GIF frames..."
+    )
+
+    frames[0].save(
+        output_path,
+        save_all=True,
+        append_images=frames[1:],
+        duration=round(1000 / fps),
+        loop=0,          # Repeat forever
+        disposal=2,
+        optimize=False,
+    )
+
+    print(
+        "\nGIF successfully saved to:\n"
+        f"{output_path.resolve()}\n"
+    )
 
 
 # --------------------------------------------------
@@ -312,6 +442,7 @@ def main():
     )
 
     card = CardObject()
+
     card.add_nodes(
         create_card_nodes(
             map_width,
@@ -324,14 +455,38 @@ def main():
         card,
     )
 
+    # Current animation phase.
     phase = "printing"
     phase_time = 0.0
+
+    # GIF recording variables.
+    recorded_frames = []
+    frame_counter = 0
+    recording = True
+
+    print(
+        "Recording the first complete animation cycle."
+    )
+
+    print(
+        "Keep the window open until the terminal says "
+        "the GIF was saved."
+    )
+
+    print(
+        f"The GIF will be saved to:\n"
+        f"{GIF_PATH.resolve()}\n"
+    )
 
     running = True
 
     while running:
         dt = clock.tick(FPS) / 1000.0
         phase_time += dt
+
+        # This becomes True after one complete
+        # print -> rotate -> erase sequence.
+        cycle_finished = False
 
         for event in pg.event.get():
             if event.type == pg.QUIT:
@@ -345,9 +500,8 @@ def main():
         # ------------------------------------------
 
         if phase == "printing":
-            rows_visible = (
-                int(phase_time / PRINT_LINE_TIME)
-                + 1
+            rows_visible = int(
+                phase_time / PRINT_LINE_TIME
             )
 
             rows_visible = min(
@@ -382,8 +536,8 @@ def main():
                 1.0,
             )
 
-            # Absolute rotation calculated from the
-            # card's original position.
+            # Complete whole rotations so the card returns
+            # to its original position before erasing.
             angle_x = progress * 2 * np.pi
             angle_y = progress * 4 * np.pi
             angle_z = progress * 2 * np.pi
@@ -395,7 +549,6 @@ def main():
             )
 
             if phase_time >= ROTATE_DURATION:
-                # Return to the flat position before erasing.
                 projection.reset()
 
                 phase = "erasing"
@@ -429,12 +582,47 @@ def main():
                 phase = "printing"
                 phase_time = 0.0
 
+                cycle_finished = True
+
+        # Draw the current frame.
         projection.display(
             first_visible_row,
             last_visible_row,
         )
 
         pg.display.flip()
+
+        # ------------------------------------------
+        # Record the first complete cycle
+        # ------------------------------------------
+
+        if (
+            recording
+            and frame_counter % CAPTURE_EVERY == 0
+        ):
+            recorded_frames.append(
+                capture_gif_frame(
+                    projection.screen
+                )
+            )
+
+        # Save immediately after the first sequence ends.
+        if recording and cycle_finished:
+            save_animation(
+                recorded_frames,
+                GIF_PATH,
+                GIF_FPS,
+            )
+
+            recording = False
+            recorded_frames.clear()
+
+            # Update the window title after saving.
+            pg.display.set_caption(
+                "ASCII 3D CARD - GIF SAVED"
+            )
+
+        frame_counter += 1
 
     pg.quit()
 
