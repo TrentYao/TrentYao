@@ -30,6 +30,12 @@ PROFILE = {
     "languages": "Python, JavaScript, Java, HTML, CSS, FXML",
     "tools": "Git, VS Code, Pygame CE, JavaFX",
     "contact": "ty18662@gmail.com",
+    "bio":[
+        "experienced Java developer",
+        "currently learning python and web development",
+        "want to get into cyber security in the future",
+        "Always experimenting with new ideas.",
+    ],
 }
 
 
