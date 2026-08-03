@@ -17,6 +17,11 @@ HEIGHT = 800
 X_GAP = 6
 Y_GAP = 12
 
+# Empty space around the card while rotating.
+# Increase this number to make the card smaller.
+# Decrease it to make the card larger.
+SAFE_MARGIN = 20
+
 
 # ==================================================
 # Colors
@@ -25,7 +30,7 @@ Y_GAP = 12
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 
-# Matrix green
+# Text and symbols inside the card.
 CARD_GREEN = (0, 255, 65)
 
 
@@ -33,19 +38,12 @@ CARD_GREEN = (0, 255, 65)
 # Animation timing, in seconds
 # ==================================================
 
-# Time between each printed line
 PRINT_LINE_TIME = 0.07
-
-# Pause after the entire card appears
 PRINT_HOLD_TIME = 0.5
 
-# Amount of time the card rotates
 ROTATE_DURATION = 6.0
 
-# Time between each erased line
 ERASE_LINE_TIME = 0.05
-
-# Blank pause before restarting
 BLANK_HOLD_TIME = 0.4
 
 
@@ -53,13 +51,12 @@ BLANK_HOLD_TIME = 0.4
 # GIF settings
 # ==================================================
 
-# Pygame runs at 60 FPS, but the saved GIF uses 20 FPS.
+# Pygame displays at 60 FPS, while the GIF records
+# at 20 FPS to reduce its file size.
 GIF_FPS = 20
 
-# Dimensions of card-animation.gif
 GIF_SIZE = (525, 600)
 
-# At 60 FPS, recording every third frame gives 20 FPS.
 CAPTURE_EVERY = max(
     1,
     round(FPS / GIF_FPS),
@@ -123,8 +120,7 @@ def load_ascii_file(path: Path):
 
     map_height = len(lines)
 
-    # Add spaces to shorter rows so all rows have
-    # exactly the same number of characters.
+    # Give every line the same width.
     padded_lines = [
         line.ljust(map_width)
         for line in lines
@@ -174,8 +170,10 @@ class CardObject:
 
     def set_rotation(self, matrix):
         """
-        Calculate each rotation from the untouched original
-        coordinates so rotation errors do not accumulate.
+        Rotate from the original card coordinates.
+
+        This prevents small errors from accumulating as the
+        card continues rotating.
         """
 
         center = self.original_nodes.mean(
@@ -227,17 +225,67 @@ class Projection:
         self.background = BLACK
         self.surfaces = {}
 
-        # Consolas is monospaced, which keeps ASCII art aligned.
+        # A monospaced font keeps the ASCII art aligned.
         self.font = pg.font.SysFont(
             "consolas",
             10,
         )
 
-        # Cache rendered images using:
+        # Card dimensions before rotation.
+        self.card_width = (
+            max(0, self.map_width - 1)
+            * X_GAP
+        )
+
+        self.card_height = (
+            max(0, self.map_height - 1)
+            * Y_GAP
+        )
+
+        # The diagonal represents the maximum amount of space
+        # the card could occupy during any rotation.
+        card_diagonal = np.hypot(
+            self.card_width,
+            self.card_height,
+        )
+
+        available_width = max(
+            1,
+            self.width - SAFE_MARGIN * 2,
+        )
+
+        available_height = max(
+            1,
+            self.height - SAFE_MARGIN * 2,
+        )
+
+        if card_diagonal > 0:
+            self.card_scale = min(
+                1.0,
+                available_width / card_diagonal,
+                available_height / card_diagonal,
+            )
+        else:
+            self.card_scale = 1.0
+
+        # Local center of the unrotated card.
+        self.card_center_x = (
+            self.card_width / 2
+        )
+
+        self.card_center_y = (
+            self.card_height / 2
+        )
+
+        print(
+            f"Card scale: {self.card_scale:.3f}"
+        )
+
+        # Cache rendered characters using:
         # (character, color)
         self.character_surfaces = {}
 
-        # These positions will stay white.
+        # These character positions stay white.
         self.border_positions = set()
 
         self.find_border_positions()
@@ -256,10 +304,10 @@ class Projection:
 
     def find_border_positions(self):
         """
-        Detect the outside card border.
+        Detect the outside border of the ASCII card.
 
-        The detected outside border remains white.
-        Everything else becomes Matrix green.
+        The border remains white. Content inside the border
+        becomes Matrix green.
         """
 
         border_glyphs = {
@@ -314,8 +362,8 @@ class Projection:
             left_edge = min(visible_columns)
             right_edge = max(visible_columns)
 
-            # First and last visible characters of each row
-            # are part of the outside edge.
+            # The first and last visible characters of each
+            # row belong to the outside edge.
             self.border_positions.add(
                 (row, left_edge)
             )
@@ -324,8 +372,8 @@ class Projection:
                 (row, right_edge)
             )
 
-            # Every visible character on the top and bottom
-            # rows belongs to the border.
+            # Every visible character on the first and last
+            # visible rows is part of the border.
             if row == top_row or row == bottom_row:
                 for column in visible_columns:
                     self.border_positions.add(
@@ -339,8 +387,8 @@ class Projection:
                 for column in visible_columns
             ]
 
-            # Rows containing only border symbols may be part
-            # of rounded or multi-line borders.
+            # A row containing only border glyphs is treated
+            # as part of a rounded or multi-line border.
             if all(
                 character in border_glyphs
                 for character in visible_characters
@@ -352,7 +400,7 @@ class Projection:
 
                 continue
 
-            # Detect border symbols beginning at the left edge.
+            # Detect border characters beginning at the left.
             for column in visible_columns:
                 character = line[column]
 
@@ -363,7 +411,7 @@ class Projection:
                 else:
                     break
 
-            # Detect border symbols beginning at the right edge.
+            # Detect border characters beginning at the right.
             for column in reversed(visible_columns):
                 character = line[column]
 
@@ -378,12 +426,9 @@ class Projection:
         row = index // self.map_width
         column = index % self.map_width
 
-        # Keep the outside card border white.
         if (row, column) in self.border_positions:
             return WHITE
 
-        # Center text, hearts, corner symbols, and all other
-        # content inside the border become Matrix green.
         return CARD_GREEN
 
     def get_character_surface(
@@ -397,12 +442,42 @@ class Projection:
         )
 
         if cache_key not in self.character_surfaces:
-            self.character_surfaces[cache_key] = (
-                self.font.render(
-                    character,
-                    True,
-                    color,
+            original_surface = self.font.render(
+                character,
+                True,
+                color,
+            )
+
+            # Scale the character itself along with its position.
+            if self.card_scale < 0.999:
+                scaled_width = max(
+                    1,
+                    round(
+                        original_surface.get_width()
+                        * self.card_scale
+                    ),
                 )
+
+                scaled_height = max(
+                    1,
+                    round(
+                        original_surface.get_height()
+                        * self.card_scale
+                    ),
+                )
+
+                text_surface = pg.transform.smoothscale(
+                    original_surface,
+                    (
+                        scaled_width,
+                        scaled_height,
+                    ),
+                )
+            else:
+                text_surface = original_surface
+
+            self.character_surfaces[cache_key] = (
+                text_surface
             )
 
         return self.character_surfaces[cache_key]
@@ -419,31 +494,8 @@ class Projection:
         if last_visible_row is None:
             last_visible_row = self.map_height
 
-        card_pixel_width = (
-            max(
-                0,
-                self.map_width - 1,
-            )
-            * X_GAP
-        )
-
-        card_pixel_height = (
-            max(
-                0,
-                self.map_height - 1,
-            )
-            * Y_GAP
-        )
-
-        start_x = (
-            self.width
-            - card_pixel_width
-        ) / 2
-
-        start_y = (
-            self.height
-            - card_pixel_height
-        ) / 2
+        screen_center_x = self.width / 2
+        screen_center_y = self.height / 2
 
         for surface in self.surfaces.values():
             for index, node in enumerate(
@@ -454,7 +506,6 @@ class Projection:
 
                 row = index // self.map_width
 
-                # Skip rows that are not currently visible.
                 if not (
                     first_visible_row
                     <= row
@@ -478,17 +529,35 @@ class Projection:
                     )
                 )
 
-                x = int(
-                    start_x + node[0]
+                # Position the rotated node relative to the
+                # original card center, apply the safety scale,
+                # and place it in the middle of the window.
+                x = (
+                    screen_center_x
+                    + (
+                        node[0]
+                        - self.card_center_x
+                    )
+                    * self.card_scale
+                    - text_surface.get_width() / 2
                 )
 
-                y = int(
-                    start_y + node[1]
+                y = (
+                    screen_center_y
+                    + (
+                        node[1]
+                        - self.card_center_y
+                    )
+                    * self.card_scale
+                    - text_surface.get_height() / 2
                 )
 
                 self.screen.blit(
                     text_surface,
-                    (x, y),
+                    (
+                        int(x),
+                        int(y),
+                    ),
                 )
 
     def set_rotation(
@@ -630,7 +699,7 @@ def save_animation(
     )
 
     print(
-        "\nMatrix-green GIF successfully saved to:\n"
+        "\nGIF successfully saved to:\n"
         f"{output_path.resolve()}\n"
     )
 
@@ -684,7 +753,7 @@ def main():
     recording = True
 
     print(
-        "Recording the first complete Matrix-green animation cycle."
+        "Recording the first complete animation cycle."
     )
 
     print(
@@ -715,7 +784,7 @@ def main():
         last_visible_row = map_height
 
         # ------------------------------------------
-        # Phase 1: print from top to bottom
+        # Phase 1: print the card
         # ------------------------------------------
 
         if phase == "printing":
@@ -745,7 +814,7 @@ def main():
                 phase_time = 0.0
 
         # ------------------------------------------
-        # Phase 2: rotate the complete card
+        # Phase 2: rotate the card
         # ------------------------------------------
 
         elif phase == "rotating":
@@ -789,7 +858,7 @@ def main():
                 phase_time = 0.0
 
         # ------------------------------------------
-        # Phase 3: erase from top to bottom
+        # Phase 3: erase the card
         # ------------------------------------------
 
         elif phase == "erasing":
