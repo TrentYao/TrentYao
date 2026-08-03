@@ -14,13 +14,21 @@ FPS = 60
 WIDTH = 700
 HEIGHT = 800
 
-X_GAP = 6
-Y_GAP = 12
+# Character spacing
+X_GAP = 8
+Y_GAP = 16
 
-# Empty space around the card while rotating.
-# Increase this number to make the card smaller.
-# Decrease it to make the card larger.
-SAFE_MARGIN = 20
+# Smaller margin makes the card appear larger.
+SAFE_MARGIN = 30
+
+
+# ==================================================
+# Font settings
+# ==================================================
+
+FONT_NAME = "consolas"
+FONT_SIZE = 14
+FONT_BOLD = True
 
 
 # ==================================================
@@ -28,20 +36,28 @@ SAFE_MARGIN = 20
 # ==================================================
 
 BLACK = (0, 0, 0)
+
+# Bright card border
 WHITE = (255, 255, 255)
 
-# Text and symbols inside the card.
-CARD_GREEN = (0, 255, 65)
+# Bright Matrix green for text and symbols
+CARD_GREEN = (90, 255, 125)
+
+# Glow colors
+GREEN_GLOW = (0, 150, 50)
+WHITE_GLOW = (125, 125, 125)
+
+GLOW_ALPHA = 170
 
 
 # ==================================================
-# Animation timing, in seconds
+# Animation timing
 # ==================================================
 
 PRINT_LINE_TIME = 0.07
 PRINT_HOLD_TIME = 0.5
 
-ROTATE_DURATION = 6.0
+ROTATE_DURATION = 16.0
 
 ERASE_LINE_TIME = 0.05
 BLANK_HOLD_TIME = 0.4
@@ -51,8 +67,6 @@ BLANK_HOLD_TIME = 0.4
 # GIF settings
 # ==================================================
 
-# Pygame displays at 60 FPS, while the GIF records
-# at 20 FPS to reduce its file size.
 GIF_FPS = 20
 
 GIF_SIZE = (525, 600)
@@ -120,13 +134,15 @@ def load_ascii_file(path: Path):
 
     map_height = len(lines)
 
-    # Give every line the same width.
+    # Make every row the same width.
     padded_lines = [
         line.ljust(map_width)
         for line in lines
     ]
 
-    characters = "".join(padded_lines)
+    characters = "".join(
+        padded_lines
+    )
 
     return (
         characters,
@@ -170,10 +186,8 @@ class CardObject:
 
     def set_rotation(self, matrix):
         """
-        Rotate from the original card coordinates.
-
-        This prevents small errors from accumulating as the
-        card continues rotating.
+        Rotate from the original card coordinates so small
+        calculation errors do not accumulate over time.
         """
 
         center = self.original_nodes.mean(
@@ -225,13 +239,14 @@ class Projection:
         self.background = BLACK
         self.surfaces = {}
 
-        # A monospaced font keeps the ASCII art aligned.
+        # Bold monospaced font for clearer ASCII art.
         self.font = pg.font.SysFont(
-            "consolas",
-            10,
+            FONT_NAME,
+            FONT_SIZE,
+            bold=FONT_BOLD,
         )
 
-        # Card dimensions before rotation.
+        # Original dimensions of the card.
         self.card_width = (
             max(0, self.map_width - 1)
             * X_GAP
@@ -242,8 +257,8 @@ class Projection:
             * Y_GAP
         )
 
-        # The diagonal represents the maximum amount of space
-        # the card could occupy during any rotation.
+        # The diagonal is the maximum size the card may occupy
+        # while rotating around its center.
         card_diagonal = np.hypot(
             self.card_width,
             self.card_height,
@@ -268,7 +283,6 @@ class Projection:
         else:
             self.card_scale = 1.0
 
-        # Local center of the unrotated card.
         self.card_center_x = (
             self.card_width / 2
         )
@@ -278,14 +292,15 @@ class Projection:
         )
 
         print(
-            f"Card scale: {self.card_scale:.3f}"
+            f"Card display scale: "
+            f"{self.card_scale:.3f}"
         )
 
-        # Cache rendered characters using:
-        # (character, color)
+        # Cache normal characters and glow characters.
         self.character_surfaces = {}
+        self.glow_surfaces = {}
 
-        # These character positions stay white.
+        # Border positions remain white.
         self.border_positions = set()
 
         self.find_border_positions()
@@ -304,10 +319,10 @@ class Projection:
 
     def find_border_positions(self):
         """
-        Detect the outside border of the ASCII card.
+        Detect the outer card border.
 
-        The border remains white. Content inside the border
-        becomes Matrix green.
+        The border stays white. Text, hearts, corner symbols,
+        and other content inside the card become green.
         """
 
         border_glyphs = {
@@ -362,8 +377,7 @@ class Projection:
             left_edge = min(visible_columns)
             right_edge = max(visible_columns)
 
-            # The first and last visible characters of each
-            # row belong to the outside edge.
+            # Outermost characters on each row.
             self.border_positions.add(
                 (row, left_edge)
             )
@@ -372,8 +386,7 @@ class Projection:
                 (row, right_edge)
             )
 
-            # Every visible character on the first and last
-            # visible rows is part of the border.
+            # Entire top and bottom rows are border.
             if row == top_row or row == bottom_row:
                 for column in visible_columns:
                     self.border_positions.add(
@@ -387,8 +400,8 @@ class Projection:
                 for column in visible_columns
             ]
 
-            # A row containing only border glyphs is treated
-            # as part of a rounded or multi-line border.
+            # Rows containing only border symbols are also
+            # considered part of the border.
             if all(
                 character in border_glyphs
                 for character in visible_characters
@@ -400,7 +413,7 @@ class Projection:
 
                 continue
 
-            # Detect border characters beginning at the left.
+            # Detect connected border symbols from the left.
             for column in visible_columns:
                 character = line[column]
 
@@ -411,7 +424,7 @@ class Projection:
                 else:
                     break
 
-            # Detect border characters beginning at the right.
+            # Detect connected border symbols from the right.
             for column in reversed(visible_columns):
                 character = line[column]
 
@@ -431,6 +444,39 @@ class Projection:
 
         return CARD_GREEN
 
+    def scale_text_surface(self, surface):
+        """
+        Scale the character using regular scaling so it stays
+        sharper than smooth scaling.
+        """
+
+        if self.card_scale >= 0.999:
+            return surface
+
+        scaled_width = max(
+            1,
+            round(
+                surface.get_width()
+                * self.card_scale
+            ),
+        )
+
+        scaled_height = max(
+            1,
+            round(
+                surface.get_height()
+                * self.card_scale
+            ),
+        )
+
+        return pg.transform.scale(
+            surface,
+            (
+                scaled_width,
+                scaled_height,
+            ),
+        )
+
     def get_character_surface(
         self,
         character,
@@ -448,39 +494,46 @@ class Projection:
                 color,
             )
 
-            # Scale the character itself along with its position.
-            if self.card_scale < 0.999:
-                scaled_width = max(
-                    1,
-                    round(
-                        original_surface.get_width()
-                        * self.card_scale
-                    ),
-                )
-
-                scaled_height = max(
-                    1,
-                    round(
-                        original_surface.get_height()
-                        * self.card_scale
-                    ),
-                )
-
-                text_surface = pg.transform.smoothscale(
-                    original_surface,
-                    (
-                        scaled_width,
-                        scaled_height,
-                    ),
-                )
-            else:
-                text_surface = original_surface
+            text_surface = self.scale_text_surface(
+                original_surface
+            )
 
             self.character_surfaces[cache_key] = (
                 text_surface
             )
 
         return self.character_surfaces[cache_key]
+
+    def get_glow_surface(
+        self,
+        character,
+        color,
+    ):
+        cache_key = (
+            character,
+            color,
+        )
+
+        if cache_key not in self.glow_surfaces:
+            original_surface = self.font.render(
+                character,
+                True,
+                color,
+            )
+
+            glow_surface = self.scale_text_surface(
+                original_surface
+            )
+
+            glow_surface.set_alpha(
+                GLOW_ALPHA
+            )
+
+            self.glow_surfaces[cache_key] = (
+                glow_surface
+            )
+
+        return self.glow_surfaces[cache_key]
 
     def display(
         self,
@@ -529,9 +582,7 @@ class Projection:
                     )
                 )
 
-                # Position the rotated node relative to the
-                # original card center, apply the safety scale,
-                # and place it in the middle of the window.
+                # Keep the card centered during rotation.
                 x = (
                     screen_center_x
                     + (
@@ -552,11 +603,48 @@ class Projection:
                     - text_surface.get_height() / 2
                 )
 
+                draw_x = int(x)
+                draw_y = int(y)
+
+                if color == WHITE:
+                    glow_color = WHITE_GLOW
+                else:
+                    glow_color = GREEN_GLOW
+
+                glow_surface = (
+                    self.get_glow_surface(
+                        character,
+                        glow_color,
+                    )
+                )
+
+                # Draw a glow around the character.
+                glow_offsets = (
+                    (-2, 0),
+                    (2, 0),
+                    (0, -2),
+                    (0, 2),
+                    (-1, -1),
+                    (1, -1),
+                    (-1, 1),
+                    (1, 1),
+                )
+
+                for offset_x, offset_y in glow_offsets:
+                    self.screen.blit(
+                        glow_surface,
+                        (
+                            draw_x + offset_x,
+                            draw_y + offset_y,
+                        ),
+                    )
+
+                # Draw the bright character on top.
                 self.screen.blit(
                     text_surface,
                     (
-                        int(x),
-                        int(y),
+                        draw_x,
+                        draw_y,
                     ),
                 )
 
@@ -613,7 +701,7 @@ class Projection:
 
 
 # ==================================================
-# Create one coordinate for each ASCII character
+# Create one coordinate per ASCII character
 # ==================================================
 
 def create_card_nodes(
@@ -640,11 +728,12 @@ def create_card_nodes(
 
 
 # ==================================================
-# Capture one Pygame frame for the GIF
+# Capture one GIF frame
 # ==================================================
 
 def capture_gif_frame(screen):
-    resized_surface = pg.transform.smoothscale(
+    # Regular scaling keeps the ASCII characters sharper.
+    resized_surface = pg.transform.scale(
         screen,
         GIF_SIZE,
     )
@@ -662,7 +751,7 @@ def capture_gif_frame(screen):
 
 
 # ==================================================
-# Save recorded frames as an animated GIF
+# Save the animated GIF
 # ==================================================
 
 def save_animation(
@@ -674,7 +763,6 @@ def save_animation(
         print(
             "No GIF frames were recorded."
         )
-
         return
 
     output_path.parent.mkdir(
@@ -699,7 +787,7 @@ def save_animation(
     )
 
     print(
-        "\nGIF successfully saved to:\n"
+        "\nBright card GIF successfully saved to:\n"
         f"{output_path.resolve()}\n"
     )
 
@@ -778,6 +866,12 @@ def main():
 
         for event in pg.event.get():
             if event.type == pg.QUIT:
+                running = False
+
+            if (
+                event.type == pg.KEYDOWN
+                and event.key == pg.K_ESCAPE
+            ):
                 running = False
 
         first_visible_row = 0
