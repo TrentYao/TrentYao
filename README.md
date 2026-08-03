@@ -36,10 +36,7 @@ WINDOWS MATRIX PROFILE WITH GIF INSIDE THE SAME TERMINAL WINDOW
 ## Connect
 
 <p align="center">
-  <a href="YOUR_LINKEDIN_URL">
-    <img src="https://img.shields.io/badge/LinkedIn-020805?style=for-the-badge&logo=linkedin&logoColor=00FF41" alt="LinkedIn" />
-  </a>
-  <a href="mailto:YOUR_EMAIL">
+  <a href="ty18662@gmail.com">
     <img src="https://img.shields.io/badge/Email-020805?style=for-the-badge&logo=gmail&logoColor=00FF41" alt="Email" />
   </a>
   <a href="https://github.com/TrentYao">

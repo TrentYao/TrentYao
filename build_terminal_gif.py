@@ -25,14 +25,11 @@ PROFILE = {
     "name": "Trent Yao",
     "role": "CS Student",
     "location": "San Jose State University",
-    "focus": "coming soon",
+    "focus": "software development",
     "status": "Learning",
     "languages": "Python, JavaScript, Java, HTML, CSS, FXML",
     "tools": "Git, VS Code, Pygame CE, JavaFX",
     "contact": "ty18662@gmail.com",
-    "bio": [
-        "coming soon",
-    ],
 }
 
 
