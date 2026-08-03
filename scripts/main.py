@@ -5,9 +5,9 @@ import pygame as pg
 from PIL import Image
 
 
-# --------------------------------------------------
-# Window and animation settings
-# --------------------------------------------------
+# ==================================================
+# Window settings
+# ==================================================
 
 FPS = 60
 
@@ -17,13 +17,19 @@ HEIGHT = 800
 X_GAP = 6
 Y_GAP = 12
 
+
+# ==================================================
+# Colors
+# ==================================================
+
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
+CARD_RED = (255, 45, 45)
 
 
-# --------------------------------------------------
+# ==================================================
 # Animation timing, in seconds
-# --------------------------------------------------
+# ==================================================
 
 PRINT_LINE_TIME = 0.07
 PRINT_HOLD_TIME = 0.5
@@ -34,33 +40,33 @@ ERASE_LINE_TIME = 0.05
 BLANK_HOLD_TIME = 0.4
 
 
-# --------------------------------------------------
+# ==================================================
 # GIF settings
-# --------------------------------------------------
+# ==================================================
 
-# The Pygame window runs at 60 FPS, but the GIF is
-# recorded at 20 FPS to keep the file size reasonable.
+# Pygame runs at 60 FPS.
+# The saved GIF records at 20 FPS.
 GIF_FPS = 20
 
-# Size of the saved GIF.
 GIF_SIZE = (525, 600)
 
-# Capture one frame every three Pygame frames:
-# 60 FPS / 20 GIF FPS = 3
-CAPTURE_EVERY = max(1, round(FPS / GIF_FPS))
+CAPTURE_EVERY = max(
+    1,
+    round(FPS / GIF_FPS),
+)
 
 
-# --------------------------------------------------
+# ==================================================
 # Project paths
-# --------------------------------------------------
+# ==================================================
 
-# Expected project structure:
+# Expected folder structure:
 #
 # TrentYao/
-# ├── asciiArt/
-# │   └── secondCard.txt
 # ├── assets/
 # │   └── card-animation.gif
+# ├── asciiArt/
+# │   └── secondCard.txt
 # └── scripts/
 #     └── main.py
 
@@ -79,14 +85,14 @@ GIF_PATH = (
 )
 
 
-# --------------------------------------------------
+# ==================================================
 # Load the ASCII-art file
-# --------------------------------------------------
+# ==================================================
 
-def load_ascii_file(path):
+def load_ascii_file(path: Path):
     if not path.exists():
         raise FileNotFoundError(
-            "Could not find the ASCII card file:\n"
+            "Could not find the ASCII-art file:\n"
             f"{path}"
         )
 
@@ -96,15 +102,18 @@ def load_ascii_file(path):
 
     if not lines:
         raise ValueError(
-            "The ASCII card file is empty:\n"
+            "The ASCII-art file is empty:\n"
             f"{path}"
         )
 
-    map_width = max(len(line) for line in lines)
+    map_width = max(
+        len(line)
+        for line in lines
+    )
+
     map_height = len(lines)
 
-    # Add spaces to shorter lines so every line
-    # has the same width.
+    # Make every row the same width.
     padded_lines = [
         line.ljust(map_width)
         for line in lines
@@ -112,12 +121,17 @@ def load_ascii_file(path):
 
     characters = "".join(padded_lines)
 
-    return characters, map_width, map_height
+    return (
+        characters,
+        padded_lines,
+        map_width,
+        map_height,
+    )
 
 
-# --------------------------------------------------
+# ==================================================
 # Card coordinate object
-# --------------------------------------------------
+# ==================================================
 
 class CardObject:
     def __init__(self):
@@ -138,7 +152,10 @@ class CardObject:
         )
 
         nodes_with_ones = np.hstack(
-            (node_array, ones_column)
+            (
+                node_array,
+                ones_column,
+            )
         )
 
         self.nodes = nodes_with_ones.copy()
@@ -146,9 +163,9 @@ class CardObject:
 
     def set_rotation(self, matrix):
         """
-        Calculate every rotation from the original card
-        coordinates. This prevents rotation errors from
-        accumulating over time.
+        Rotate from the untouched original coordinates.
+
+        This prevents small rotation errors from accumulating.
         """
 
         center = self.original_nodes.mean(
@@ -166,9 +183,9 @@ class CardObject:
         self.nodes = self.original_nodes.copy()
 
 
-# --------------------------------------------------
+# ==================================================
 # Projection and rendering
-# --------------------------------------------------
+# ==================================================
 
 class Projection:
     def __init__(
@@ -176,6 +193,7 @@ class Projection:
         width,
         height,
         characters,
+        lines,
         map_width,
         map_height,
     ):
@@ -183,6 +201,8 @@ class Projection:
         self.height = height
 
         self.characters = characters
+        self.lines = lines
+
         self.map_width = map_width
         self.map_height = map_height
 
@@ -197,54 +217,222 @@ class Projection:
         self.background = BLACK
         self.surfaces = {}
 
-        # Consolas is monospaced, which helps keep the
-        # ASCII-art characters correctly aligned.
+        # Consolas is monospaced and keeps ASCII art aligned.
         self.font = pg.font.SysFont(
             "consolas",
             10,
         )
 
-        # Render each unique character once instead of
-        # rendering it again during every frame.
-        self.character_surfaces = {
-            character: self.font.render(
-                character,
-                True,
-                WHITE,
-            )
-            for character in set(characters)
-            if character != " "
+        # Cache rendered characters using:
+        # (character, color)
+        self.character_surfaces = {}
+
+        # Positions belonging to the outside card border.
+        self.border_positions = set()
+
+        self.find_border_positions()
+
+        print(
+            f"Detected {len(self.border_positions)} "
+            "white border characters."
+        )
+
+    def add_surface(
+        self,
+        name,
+        surface,
+    ):
+        self.surfaces[name] = surface
+
+    def find_border_positions(self):
+        """
+        Detect the outside ASCII-card border.
+
+        Border positions remain white. Every visible character
+        that is not part of this border becomes red.
+        """
+
+        border_glyphs = {
+            "-",
+            "|",
+            "+",
+            "_",
+            "/",
+            "\\",
+            "=",
+            "*",
+            "│",
+            "─",
+            "┌",
+            "┐",
+            "└",
+            "┘",
+            "╭",
+            "╮",
+            "╰",
+            "╯",
+            "═",
+            "║",
+            "╔",
+            "╗",
+            "╚",
+            "╝",
         }
 
-    def add_surface(self, name, surface):
-        self.surfaces[name] = surface
+        nonempty_rows = [
+            row
+            for row, line in enumerate(self.lines)
+            if line.strip()
+        ]
+
+        if not nonempty_rows:
+            return
+
+        top_row = min(nonempty_rows)
+        bottom_row = max(nonempty_rows)
+
+        for row, line in enumerate(self.lines):
+            visible_columns = [
+                column
+                for column, character in enumerate(line)
+                if character != " "
+            ]
+
+            if not visible_columns:
+                continue
+
+            left_edge = min(visible_columns)
+            right_edge = max(visible_columns)
+
+            # The first and last visible character of each row
+            # belong to the outside edge.
+            self.border_positions.add(
+                (row, left_edge)
+            )
+
+            self.border_positions.add(
+                (row, right_edge)
+            )
+
+            # Everything visible on the first and last rows
+            # belongs to the top and bottom border.
+            if row == top_row or row == bottom_row:
+                for column in visible_columns:
+                    self.border_positions.add(
+                        (row, column)
+                    )
+
+                continue
+
+            visible_characters = [
+                line[column]
+                for column in visible_columns
+            ]
+
+            # Rows containing only border symbols are part of
+            # rounded or multi-line borders.
+            if all(
+                character in border_glyphs
+                for character in visible_characters
+            ):
+                for column in visible_columns:
+                    self.border_positions.add(
+                        (row, column)
+                    )
+
+                continue
+
+            # Detect a run of border characters from the left.
+            for column in visible_columns:
+                character = line[column]
+
+                if character in border_glyphs:
+                    self.border_positions.add(
+                        (row, column)
+                    )
+                else:
+                    break
+
+            # Detect a run of border characters from the right.
+            for column in reversed(visible_columns):
+                character = line[column]
+
+                if character in border_glyphs:
+                    self.border_positions.add(
+                        (row, column)
+                    )
+                else:
+                    break
+
+    def get_character_color(self, index):
+        row = index // self.map_width
+        column = index % self.map_width
+
+        # The card's outside border stays white.
+        if (row, column) in self.border_positions:
+            return WHITE
+
+        # Everything inside the border is red:
+        # center text, hearts, corner T/A, and other content.
+        return CARD_RED
+
+    def get_character_surface(
+        self,
+        character,
+        color,
+    ):
+        cache_key = (
+            character,
+            color,
+        )
+
+        if cache_key not in self.character_surfaces:
+            self.character_surfaces[cache_key] = (
+                self.font.render(
+                    character,
+                    True,
+                    color,
+                )
+            )
+
+        return self.character_surfaces[cache_key]
 
     def display(
         self,
         first_visible_row=0,
         last_visible_row=None,
     ):
-        self.screen.fill(self.background)
+        self.screen.fill(
+            self.background
+        )
 
         if last_visible_row is None:
             last_visible_row = self.map_height
 
         card_pixel_width = (
-            max(0, self.map_width - 1)
+            max(
+                0,
+                self.map_width - 1,
+            )
             * X_GAP
         )
 
         card_pixel_height = (
-            max(0, self.map_height - 1)
+            max(
+                0,
+                self.map_height - 1,
+            )
             * Y_GAP
         )
 
         start_x = (
-            self.width - card_pixel_width
+            self.width
+            - card_pixel_width
         ) / 2
 
         start_y = (
-            self.height - card_pixel_height
+            self.height
+            - card_pixel_height
         ) / 2
 
         for surface in self.surfaces.values():
@@ -256,8 +444,6 @@ class Projection:
 
                 row = index // self.map_width
 
-                # Hide rows that are outside the currently
-                # visible section of the card.
                 if not (
                     first_visible_row
                     <= row
@@ -267,16 +453,27 @@ class Projection:
 
                 character = self.characters[index]
 
-                # Spaces do not need to be drawn.
                 if character == " ":
                     continue
 
-                text_surface = (
-                    self.character_surfaces[character]
+                color = self.get_character_color(
+                    index
                 )
 
-                x = int(start_x + node[0])
-                y = int(start_y + node[1])
+                text_surface = (
+                    self.get_character_surface(
+                        character,
+                        color,
+                    )
+                )
+
+                x = int(
+                    start_x + node[0]
+                )
+
+                y = int(
+                    start_y + node[1]
+                )
 
                 self.screen.blit(
                     text_surface,
@@ -335,9 +532,9 @@ class Projection:
             surface.reset()
 
 
-# --------------------------------------------------
-# Generate one coordinate for each ASCII character
-# --------------------------------------------------
+# ==================================================
+# Create one coordinate per ASCII character
+# ==================================================
 
 def create_card_nodes(
     map_width,
@@ -352,7 +549,9 @@ def create_card_nodes(
             x = X_GAP * column
             z = 0
 
-            nodes.append((x, y, z))
+            nodes.append(
+                (x, y, z)
+            )
 
     return np.array(
         nodes,
@@ -360,9 +559,9 @@ def create_card_nodes(
     )
 
 
-# --------------------------------------------------
-# Capture one Pygame frame as a Pillow image
-# --------------------------------------------------
+# ==================================================
+# Capture one Pygame frame for the GIF
+# ==================================================
 
 def capture_gif_frame(screen):
     resized_surface = pg.transform.smoothscale(
@@ -382,9 +581,9 @@ def capture_gif_frame(screen):
     )
 
 
-# --------------------------------------------------
-# Save all recorded frames as a GIF
-# --------------------------------------------------
+# ==================================================
+# Save recorded frames as an animated GIF
+# ==================================================
 
 def save_animation(
     frames,
@@ -392,7 +591,10 @@ def save_animation(
     fps,
 ):
     if not frames:
-        print("No GIF frames were recorded.")
+        print(
+            "No GIF frames were recorded."
+        )
+
         return
 
     output_path.parent.mkdir(
@@ -408,35 +610,43 @@ def save_animation(
         output_path,
         save_all=True,
         append_images=frames[1:],
-        duration=round(1000 / fps),
-        loop=0,          # Repeat forever
-        disposal=2,
+        duration=round(
+            1000 / fps
+        ),
+        loop=0,
+        disposal=1,
         optimize=False,
     )
 
     print(
-        "\nGIF successfully saved to:\n"
+        "\nColored GIF successfully saved to:\n"
         f"{output_path.resolve()}\n"
     )
 
 
-# --------------------------------------------------
+# ==================================================
 # Main animation
-# --------------------------------------------------
+# ==================================================
 
 def main():
     pg.init()
 
     clock = pg.time.Clock()
 
-    card_ascii, map_width, map_height = (
-        load_ascii_file(TXT_PATH)
+    (
+        card_ascii,
+        ascii_lines,
+        map_width,
+        map_height,
+    ) = load_ascii_file(
+        TXT_PATH
     )
 
     projection = Projection(
         WIDTH,
         HEIGHT,
         card_ascii,
+        ascii_lines,
         map_width,
         map_height,
     )
@@ -455,37 +665,35 @@ def main():
         card,
     )
 
-    # Current animation phase.
     phase = "printing"
     phase_time = 0.0
 
-    # GIF recording variables.
     recorded_frames = []
     frame_counter = 0
     recording = True
 
     print(
-        "Recording the first complete animation cycle."
+        "Recording the first complete colored animation cycle."
     )
 
     print(
-        "Keep the window open until the terminal says "
-        "the GIF was saved."
+        "Keep the Pygame window open until the GIF is saved."
     )
 
     print(
-        f"The GIF will be saved to:\n"
+        "\nThe GIF will be saved to:\n"
         f"{GIF_PATH.resolve()}\n"
     )
 
     running = True
 
     while running:
-        dt = clock.tick(FPS) / 1000.0
-        phase_time += dt
+        dt = (
+            clock.tick(FPS)
+            / 1000.0
+        )
 
-        # This becomes True after one complete
-        # print -> rotate -> erase sequence.
+        phase_time += dt
         cycle_finished = False
 
         for event in pg.event.get():
@@ -501,7 +709,8 @@ def main():
 
         if phase == "printing":
             rows_visible = int(
-                phase_time / PRINT_LINE_TIME
+                phase_time
+                / PRINT_LINE_TIME
             )
 
             rows_visible = min(
@@ -513,7 +722,8 @@ def main():
             last_visible_row = rows_visible
 
             print_duration = (
-                map_height * PRINT_LINE_TIME
+                map_height
+                * PRINT_LINE_TIME
                 + PRINT_HOLD_TIME
             )
 
@@ -532,15 +742,28 @@ def main():
             last_visible_row = map_height
 
             progress = min(
-                phase_time / ROTATE_DURATION,
+                phase_time
+                / ROTATE_DURATION,
                 1.0,
             )
 
-            # Complete whole rotations so the card returns
-            # to its original position before erasing.
-            angle_x = progress * 2 * np.pi
-            angle_y = progress * 4 * np.pi
-            angle_z = progress * 2 * np.pi
+            angle_x = (
+                progress
+                * 2
+                * np.pi
+            )
+
+            angle_y = (
+                progress
+                * 4
+                * np.pi
+            )
+
+            angle_z = (
+                progress
+                * 2
+                * np.pi
+            )
 
             projection.set_rotation(
                 angle_x,
@@ -560,7 +783,8 @@ def main():
 
         elif phase == "erasing":
             rows_removed = int(
-                phase_time / ERASE_LINE_TIME
+                phase_time
+                / ERASE_LINE_TIME
             )
 
             rows_removed = min(
@@ -572,7 +796,8 @@ def main():
             last_visible_row = map_height
 
             erase_duration = (
-                map_height * ERASE_LINE_TIME
+                map_height
+                * ERASE_LINE_TIME
                 + BLANK_HOLD_TIME
             )
 
@@ -584,7 +809,6 @@ def main():
 
                 cycle_finished = True
 
-        # Draw the current frame.
         projection.display(
             first_visible_row,
             last_visible_row,
@@ -592,10 +816,7 @@ def main():
 
         pg.display.flip()
 
-        # ------------------------------------------
-        # Record the first complete cycle
-        # ------------------------------------------
-
+        # Record only the first complete cycle.
         if (
             recording
             and frame_counter % CAPTURE_EVERY == 0
@@ -606,7 +827,6 @@ def main():
                 )
             )
 
-        # Save immediately after the first sequence ends.
         if recording and cycle_finished:
             save_animation(
                 recorded_frames,
@@ -617,7 +837,6 @@ def main():
             recording = False
             recorded_frames.clear()
 
-            # Update the window title after saving.
             pg.display.set_caption(
                 "ASCII 3D CARD - GIF SAVED"
             )
