@@ -24,19 +24,28 @@ Y_GAP = 12
 
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
-CARD_RED = (255, 45, 45)
+
+# Matrix green
+CARD_GREEN = (0, 255, 65)
 
 
 # ==================================================
 # Animation timing, in seconds
 # ==================================================
 
+# Time between each printed line
 PRINT_LINE_TIME = 0.07
+
+# Pause after the entire card appears
 PRINT_HOLD_TIME = 0.5
 
+# Amount of time the card rotates
 ROTATE_DURATION = 6.0
 
+# Time between each erased line
 ERASE_LINE_TIME = 0.05
+
+# Blank pause before restarting
 BLANK_HOLD_TIME = 0.4
 
 
@@ -44,12 +53,13 @@ BLANK_HOLD_TIME = 0.4
 # GIF settings
 # ==================================================
 
-# Pygame runs at 60 FPS.
-# The saved GIF records at 20 FPS.
+# Pygame runs at 60 FPS, but the saved GIF uses 20 FPS.
 GIF_FPS = 20
 
+# Dimensions of card-animation.gif
 GIF_SIZE = (525, 600)
 
+# At 60 FPS, recording every third frame gives 20 FPS.
 CAPTURE_EVERY = max(
     1,
     round(FPS / GIF_FPS),
@@ -60,7 +70,7 @@ CAPTURE_EVERY = max(
 # Project paths
 # ==================================================
 
-# Expected folder structure:
+# Expected structure:
 #
 # TrentYao/
 # ├── assets/
@@ -113,7 +123,8 @@ def load_ascii_file(path: Path):
 
     map_height = len(lines)
 
-    # Make every row the same width.
+    # Add spaces to shorter rows so all rows have
+    # exactly the same number of characters.
     padded_lines = [
         line.ljust(map_width)
         for line in lines
@@ -163,9 +174,8 @@ class CardObject:
 
     def set_rotation(self, matrix):
         """
-        Rotate from the untouched original coordinates.
-
-        This prevents small rotation errors from accumulating.
+        Calculate each rotation from the untouched original
+        coordinates so rotation errors do not accumulate.
         """
 
         center = self.original_nodes.mean(
@@ -217,17 +227,17 @@ class Projection:
         self.background = BLACK
         self.surfaces = {}
 
-        # Consolas is monospaced and keeps ASCII art aligned.
+        # Consolas is monospaced, which keeps ASCII art aligned.
         self.font = pg.font.SysFont(
             "consolas",
             10,
         )
 
-        # Cache rendered characters using:
+        # Cache rendered images using:
         # (character, color)
         self.character_surfaces = {}
 
-        # Positions belonging to the outside card border.
+        # These positions will stay white.
         self.border_positions = set()
 
         self.find_border_positions()
@@ -246,10 +256,10 @@ class Projection:
 
     def find_border_positions(self):
         """
-        Detect the outside ASCII-card border.
+        Detect the outside card border.
 
-        Border positions remain white. Every visible character
-        that is not part of this border becomes red.
+        The detected outside border remains white.
+        Everything else becomes Matrix green.
         """
 
         border_glyphs = {
@@ -304,8 +314,8 @@ class Projection:
             left_edge = min(visible_columns)
             right_edge = max(visible_columns)
 
-            # The first and last visible character of each row
-            # belong to the outside edge.
+            # First and last visible characters of each row
+            # are part of the outside edge.
             self.border_positions.add(
                 (row, left_edge)
             )
@@ -314,8 +324,8 @@ class Projection:
                 (row, right_edge)
             )
 
-            # Everything visible on the first and last rows
-            # belongs to the top and bottom border.
+            # Every visible character on the top and bottom
+            # rows belongs to the border.
             if row == top_row or row == bottom_row:
                 for column in visible_columns:
                     self.border_positions.add(
@@ -329,8 +339,8 @@ class Projection:
                 for column in visible_columns
             ]
 
-            # Rows containing only border symbols are part of
-            # rounded or multi-line borders.
+            # Rows containing only border symbols may be part
+            # of rounded or multi-line borders.
             if all(
                 character in border_glyphs
                 for character in visible_characters
@@ -342,7 +352,7 @@ class Projection:
 
                 continue
 
-            # Detect a run of border characters from the left.
+            # Detect border symbols beginning at the left edge.
             for column in visible_columns:
                 character = line[column]
 
@@ -353,7 +363,7 @@ class Projection:
                 else:
                     break
 
-            # Detect a run of border characters from the right.
+            # Detect border symbols beginning at the right edge.
             for column in reversed(visible_columns):
                 character = line[column]
 
@@ -368,13 +378,13 @@ class Projection:
         row = index // self.map_width
         column = index % self.map_width
 
-        # The card's outside border stays white.
+        # Keep the outside card border white.
         if (row, column) in self.border_positions:
             return WHITE
 
-        # Everything inside the border is red:
-        # center text, hearts, corner T/A, and other content.
-        return CARD_RED
+        # Center text, hearts, corner symbols, and all other
+        # content inside the border become Matrix green.
+        return CARD_GREEN
 
     def get_character_surface(
         self,
@@ -444,6 +454,7 @@ class Projection:
 
                 row = index // self.map_width
 
+                # Skip rows that are not currently visible.
                 if not (
                     first_visible_row
                     <= row
@@ -533,7 +544,7 @@ class Projection:
 
 
 # ==================================================
-# Create one coordinate per ASCII character
+# Create one coordinate for each ASCII character
 # ==================================================
 
 def create_card_nodes(
@@ -619,7 +630,7 @@ def save_animation(
     )
 
     print(
-        "\nColored GIF successfully saved to:\n"
+        "\nMatrix-green GIF successfully saved to:\n"
         f"{output_path.resolve()}\n"
     )
 
@@ -673,7 +684,7 @@ def main():
     recording = True
 
     print(
-        "Recording the first complete colored animation cycle."
+        "Recording the first complete Matrix-green animation cycle."
     )
 
     print(
